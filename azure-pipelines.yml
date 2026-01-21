@@ -10,7 +10,9 @@ steps:
 
     docker build -t thonmaker:$(Build.BuildId) .
 
-    docker rm -f thonmaker_test 2>$null; $LASTEXITCODE = 0
+    docker rm -f thonmaker_test 2>$null | Out-Null
+$global:LASTEXITCODE = 0
+
 
     docker run -d --name thonmaker_test -p 8000:8000 thonmaker:$(Build.BuildId)
 
