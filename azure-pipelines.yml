@@ -1,19 +1,14 @@
-# Starter pipeline
-# Start with a minimal pipeline that you can customize to build and deploy your code.
-# Add steps that build, run tests, deploy, and more:
-# https://aka.ms/yaml
-
-trigger: none
+trigger:
 - main
 
 pool:
-  vmImage: ubuntu-latest
+  name: SelfHostedWindows
 
 steps:
-- script: echo Hello, world!
-  displayName: 'Run a one-line script'
-
-- script: |
-    echo Add other tasks to build, test, and deploy your project.
-    echo See https://aka.ms/yaml
-  displayName: 'Run a multi-line script'
+- powershell: |
+    docker build -t thonmaker:$(Build.BuildId) .
+    docker rm -f thonmaker_test 2>$null
+    docker run -d --name thonmaker_test -p 8000:8000 thonmaker:$(Build.BuildId)
+    Start-Sleep -Seconds 3
+    Invoke-WebRequest http://localhost:8000/ -UseBasicParsing
+  displayName: Build and smoke test Docker container
