@@ -6,12 +6,18 @@ pool:
 
 steps:
 # --- SAST (Semgrep) ---
-- powershell: |
-    [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+- pwsh: |
+    # Force UTF-8 everywhere for Python + Windows
+    $env:PYTHONUTF8 = "1"
+    $env:PYTHONIOENCODING = "utf-8"
+    chcp 65001 | Out-Null
+
     python -m pip install --upgrade pip
-    pip install semgrep
+    pip install --upgrade semgrep
+
     semgrep scan --config=auto --error
   displayName: "SAST - Semgrep Scan"
+
 
 
 # --- Build + Smoke Test ---
