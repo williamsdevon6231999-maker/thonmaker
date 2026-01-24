@@ -9,7 +9,6 @@ steps:
 - powershell: |
     $ErrorActionPreference = "Stop"
 
-    # Force UTF-8 output in Windows PowerShell
     chcp 65001 | Out-Null
     [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
     $env:PYTHONUTF8 = "1"
@@ -17,10 +16,14 @@ steps:
 
     python -m pip install --upgrade pip
     python -m pip install --upgrade semgrep
-
-    # Run scan (use python -m so PATH isn't an issue)
     python -m semgrep scan --config=auto
   displayName: "SAST - Semgrep Scan"
+
+# --- Build Docker image (so Trivy has something to scan) ---
+- powershell: |
+    $ErrorActionPreference = "Stop"
+    docker build -t thonmaker:$(Build.BuildId) .
+  displayName: "Build Docker image"
 
 # --- Install/Verify Trivy (no Chocolatey required) ---
 - powershell: |
@@ -38,17 +41,14 @@ steps:
     trivy -v
   displayName: "Install/Verify Trivy"
 
-# --- Trivy CVE Scan (fail on HIGH/CRITICAL) ---
+# --- Trivy CVE Scan (report HIGH/CRITICAL) ---
 - powershell: |
     $ErrorActionPreference = "Stop"
-
-    # Cache DB in workspace to speed up later runs
     $env:TRIVY_CACHE_DIR = "$(Pipeline.Workspace)\trivy-cache"
-
     trivy image --severity HIGH,CRITICAL thonmaker:$(Build.BuildId)
   displayName: "Vuln Scan - Trivy (HIGH/CRITICAL)"
 
-# --- Build + Smoke Test (with guaranteed cleanup) ---
+# --- Smoke Test (with guaranteed cleanup) ---
 - powershell: |
     $ErrorActionPreference = "Stop"
 
@@ -56,10 +56,7 @@ steps:
     $port = 8000
     $tag  = "thonmaker:$(Build.BuildId)"
 
-    docker build -t $tag .
-
     try {
-      # Remove container if it exists (DON'T fail if it doesn't)
       docker rm -f $name 2>$null
       $LASTEXITCODE = 0
 
@@ -76,15 +73,12 @@ steps:
         }
       }
 
-
-
       Write-Host "Smoke test failed. Container logs:"
       docker logs $name
       exit 1
     }
     finally {
-      # ALWAYS cleanup so the next run doesn't get port/name conflicts
       docker rm -f $name 2>$null
       $LASTEXITCODE = 0
     }
-  displayName: "Build and smoke test Docker container"
+  displayName: "Smoke test Docker container"
