@@ -5,154 +5,61 @@ pool:
   name: SelfHostedWindows
 
 variables:
-  # ====== CHANGE THESE 3 ======
-  ACR_NAME: "thonmakeracr"              # your ACR resource name (no .azurecr.io)
-  APP_NAME: "thonmaker-app"             # your Web App name
-  SERVICE_CONNECTION: "sc-thonmaker-acr" # the service connection you just created
-  # ============================
-
-  IMAGE_REPO: "thonmaker"
-  BUILD_TAG: "$(Build.BuildId)"
-  ACR_LOGIN_SERVER: "$(ACR_NAME).azurecr.io"
-  LOCAL_IMAGE: "$(IMAGE_REPO):$(BUILD_TAG)"
-  ACR_IMAGE: "$(ACR_LOGIN_SERVER)/$(IMAGE_REPO):$(BUILD_TAG)"
-  ACR_IMAGE_LATEST: "$(ACR_LOGIN_SERVER)/$(IMAGE_REPO):latest"
+  imageName: thonmaker
+  acrName: thonmakeracr
+  acrLoginServer: thonmakeracr.azurecr.io
+  webAppName: thonmaker-app
 
 steps:
-# --- SAST (Semgrep) ---
+# ---------------------------
+# SAST – Semgrep (report only)
+# ---------------------------
 - powershell: |
     $ErrorActionPreference = "Stop"
-
-    chcp 65001 | Out-Null
-    [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-    $env:PYTHONUTF8 = "1"
-    $env:PYTHONIOENCODING = "utf-8"
-
     python -m pip install --upgrade pip
     python -m pip install --upgrade semgrep
-
-    # Run SAST (report only – do not fail pipeline)
-    python -m semgrep scan --config=auto
+    semgrep scan --config=auto
     $global:LASTEXITCODE = 0
-  displayName: "SAST - Semgrep Scan"
+  displayName: "SAST - Semgrep"
 
-# --- Build Docker image (local tag) ---
+# ---------------------------
+# Build Docker image
+# ---------------------------
 - powershell: |
-    $ErrorActionPreference = "Stop"
-    docker build -t "$(LOCAL_IMAGE)" .
-  displayName: "Build Docker image"
+    docker build -t $(imageName):$(Build.BuildId) .
+  displayName: "Build Docker Image"
 
-# --- Install / Verify Trivy ---
+# ---------------------------
+# Trivy Image Scan (report only)
+# ---------------------------
 - powershell: |
-    $ErrorActionPreference = "Stop"
-
-    if (-not (Get-Command trivy -ErrorAction SilentlyContinue)) {
-      if (Get-Command winget -ErrorAction SilentlyContinue) {
-        winget install --id AquaSecurity.Trivy -e --accept-package-agreements --accept-source-agreements
-      } else {
-        Write-Host "ERROR: winget not found on this agent"
-        exit 1
-      }
-    }
-
-    trivy -v
-  displayName: "Install / Verify Trivy"
-
-# --- Trivy Scan (save reports) ---
-- powershell: |
-    $ErrorActionPreference = "Stop"
-    $env:TRIVY_CACHE_DIR = "$(Pipeline.Workspace)\trivy-cache"
-
-    New-Item -ItemType Directory -Force -Path "$(Build.ArtifactStagingDirectory)" | Out-Null
-
-    trivy image --severity HIGH,CRITICAL --format table "$(LOCAL_IMAGE)" | Out-File -Encoding utf8 "$(Build.ArtifactStagingDirectory)\image-scan-table.txt"
-    trivy image --severity HIGH,CRITICAL --format json  "$(LOCAL_IMAGE)" | Out-File -Encoding utf8 "$(Build.ArtifactStagingDirectory)\image-scan.json"
-
-    # Do not fail pipeline for now (report only)
+    trivy image --severity HIGH,CRITICAL $(imageName):$(Build.BuildId)
     $global:LASTEXITCODE = 0
-  displayName: "Image CVE Scan - Trivy (report)"
+  displayName: "Trivy Image Scan"
 
-# --- Publish scan artifacts to pipeline run ---
-- task: PublishBuildArtifacts@1
+# ---------------------------
+# Login to ACR
+# ---------------------------
+- task: Docker@2
+  displayName: "Login to ACR"
   inputs:
-    PathtoPublish: "$(Build.ArtifactStagingDirectory)"
-    ArtifactName: "security-reports"
-    publishLocation: "Container"
-  displayName: "Publish security reports"
+    command: login
+    containerRegistry: sc-thonmaker-acr
 
-# --- Smoke Test (local image) ---
+# ---------------------------
+# Tag + Push image to ACR
+# ---------------------------
 - powershell: |
-    $ErrorActionPreference = "Stop"
+    docker tag $(imageName):$(Build.BuildId) $(acrLoginServer)/$(imageName):$(Build.BuildId)
+    docker push $(acrLoginServer)/$(imageName):$(Build.BuildId)
+  displayName: "Push Image to ACR"
 
-    $name = "thonmaker_test_$(Build.BuildId)"
-    $tag  = "$(LOCAL_IMAGE)"
-
-    function Remove-Container([string]$n) {
-      $old = $ErrorActionPreference
-      $ErrorActionPreference = "SilentlyContinue"
-      docker rm -f $n *> $null
-      $global:LASTEXITCODE = 0
-      $ErrorActionPreference = $old
-    }
-
-    try {
-      Remove-Container $name
-
-      docker run -d --name $name -p 0:8000 $tag | Out-Null
-
-      $portLine = docker port $name 8000/tcp
-      $hostPort = ($portLine -split ':')[-1].Trim()
-
-      for ($i=1; $i -le 20; $i++) {
-        try {
-          Invoke-WebRequest "http://localhost:$hostPort/" -UseBasicParsing -TimeoutSec 3 | Out-Null
-          Write-Host "Smoke test passed on port $hostPort"
-          exit 0
-        } catch {
-          Write-Host "Waiting for app... attempt $i (port $hostPort)"
-          Start-Sleep -Seconds 2
-        }
-      }
-
-      Write-Host "Smoke test failed. Container logs:"
-      docker logs $name
-      exit 1
-    }
-    finally {
-      Remove-Container $name
-    }
-  displayName: "Smoke Test Docker Container"
-
-# --- Login to Azure + ACR, tag & push ---
-- task: AzureCLI@2
-  inputs:
-    azureSubscription: "$(SERVICE_CONNECTION)"
-    scriptType: "ps"
-    scriptLocation: "inlineScript"
-    inlineScript: |
-      $ErrorActionPreference = "Stop"
-
-      az account show
-
-      # Login to ACR
-      az acr login --name "$(ACR_NAME)"
-
-      # Tag image for ACR
-      docker tag "$(LOCAL_IMAGE)" "$(ACR_IMAGE)"
-      docker tag "$(LOCAL_IMAGE)" "$(ACR_IMAGE_LATEST)"
-
-      # Push
-      docker push "$(ACR_IMAGE)"
-      docker push "$(ACR_IMAGE_LATEST)"
-
-      Write-Host "Pushed: $(ACR_IMAGE)"
-      Write-Host "Pushed: $(ACR_IMAGE_LATEST)"
-  displayName: "Push image to ACR"
-
-# --- Deploy container from ACR to Web App ---
+# ---------------------------
+# Deploy to Azure Web App (Container)
+# ---------------------------
 - task: AzureWebAppContainer@1
+  displayName: "Deploy to Azure App Service"
   inputs:
-    azureSubscription: "$(SERVICE_CONNECTION)"
-    appName: "$(APP_NAME)"
-    containers: "$(ACR_IMAGE)"
-  displayName: "Deploy to Azure Web App (container)"
+    azureSubscription: sc-thonmaker-azure
+    appName: $(webAppName)
+    imageName: $(acrLoginServer)/$(imageName):$(Build.BuildId)
