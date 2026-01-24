@@ -1,30 +1,37 @@
-# --- Build + Smoke Test ---
-- powershell: |
-    $ErrorActionPreference = "Stop"
+trigger:
+  - main
 
-    docker build -t thonmaker:$(Build.BuildId) .
+pool:
+  name: SelfHostedWindows
 
-    docker rm -f thonmaker_test 2>$null
-    $LASTEXITCODE = 0
+steps:
+  # --- Build + Smoke Test ---
+  - powershell: |
+      $ErrorActionPreference = "Stop"
 
-    # Free port 8000 if something is using it
-    $pid = (Get-NetTCPConnection -LocalPort 8000 -ErrorAction SilentlyContinue | Select-Object -First 1).OwningProcess
-    if ($pid) { Stop-Process -Id $pid -Force }
+      docker build -t thonmaker:$(Build.BuildId) .
 
-    docker run -d --name thonmaker_test -p 8000:8000 thonmaker:$(Build.BuildId)
+      docker rm -f thonmaker_test 2>$null
+      $LASTEXITCODE = 0
 
-    for ($i=1; $i -le 15; $i++) {
-      try {
-        Invoke-WebRequest http://localhost:8000/ -UseBasicParsing -TimeoutSec 3 | Out-Null
-        Write-Host "Smoke test passed"
-        exit 0
-      } catch {
-        Write-Host "Waiting for app... attempt $i"
-        Start-Sleep -Seconds 2
+      # Free port 8000 if something is using it
+      $pid = (Get-NetTCPConnection -LocalPort 8000 -ErrorAction SilentlyContinue | Select-Object -First 1).OwningProcess
+      if ($pid) { Stop-Process -Id $pid -Force }
+
+      docker run -d --name thonmaker_test -p 8000:8000 thonmaker:$(Build.BuildId)
+
+      for ($i=1; $i -le 15; $i++) {
+        try {
+          Invoke-WebRequest http://localhost:8000/ -UseBasicParsing -TimeoutSec 3 | Out-Null
+          Write-Host "Smoke test passed"
+          exit 0
+        } catch {
+          Write-Host "Waiting for app... attempt $i"
+          Start-Sleep -Seconds 2
+        }
       }
-    }
 
-    Write-Host "Smoke test failed. Container logs:"
-    docker logs thonmaker_test
-    exit 1
-  displayName: "Build and smoke test Docker container"
+      Write-Host "Smoke test failed. Container logs:"
+      docker logs thonmaker_test
+      exit 1
+    displayName: "Build and smoke test Docker container"
