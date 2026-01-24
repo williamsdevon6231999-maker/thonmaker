@@ -54,23 +54,32 @@ steps:
 - powershell: |
     $ErrorActionPreference = "Stop"
 
-    $name = "thonmaker_test"
-    $port = 8000
+    $name = "thonmaker_test_$(Build.BuildId)"
     $tag  = "thonmaker:$(Build.BuildId)"
 
+    function Remove-Container([string]$n) {
+      docker rm -f $n *> $null
+      $global:LASTEXITCODE = 0
+    }
+
     try {
-      docker rm -f $name 2>$null
-      $LASTEXITCODE = 0
+      # cleanup if exists (never fail)
+      Remove-Container $name
 
-      docker run -d --name $name -p ${port}:${port} $tag | Out-Null
+      # run container with random host port
+      docker run -d --name $name -p 0:8000 $tag | Out-Null
 
-      for ($i=1; $i -le 15; $i++) {
+      # discover assigned host port
+      $portLine = docker port $name 8000/tcp
+      $hostPort = ($portLine -split ':')[-1].Trim()
+
+      for ($i=1; $i -le 20; $i++) {
         try {
-          Invoke-WebRequest "http://localhost:$port/" -UseBasicParsing -TimeoutSec 3 | Out-Null
-          Write-Host "Smoke test passed"
+          Invoke-WebRequest "http://localhost:$hostPort/" -UseBasicParsing -TimeoutSec 3 | Out-Null
+          Write-Host "Smoke test passed on port $hostPort"
           exit 0
         } catch {
-          Write-Host "Waiting for app... attempt $i"
+          Write-Host "Waiting for app... attempt $i (port $hostPort)"
           Start-Sleep -Seconds 2
         }
       }
@@ -80,7 +89,8 @@ steps:
       exit 1
     }
     finally {
-      docker rm -f $name 2>$null
-      $LASTEXITCODE = 0
+      # ALWAYS cleanup (never fail)
+      Remove-Container $name
     }
   displayName: "Smoke Test Docker Container"
+
