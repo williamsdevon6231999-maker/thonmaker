@@ -4,6 +4,8 @@ trigger:
 pool:
   name: SelfHostedWindows
 
+steps:
+# --- SAST (Semgrep) ---
 - powershell: |
     $ErrorActionPreference = "Stop"
 
@@ -17,7 +19,13 @@ pool:
     python -m semgrep scan --config=auto --sarif --output semgrep.sarif
   displayName: "SAST - Semgrep (SARIF)"
 
-steps:
+- task: PublishBuildArtifacts@1
+  inputs:
+    PathtoPublish: semgrep.sarif
+    ArtifactName: sast-semgrep-sarif
+  displayName: "Publish Semgrep SARIF"
+
+# --- Build + Smoke Test ---
 - powershell: |
     $ErrorActionPreference = "Stop"
 
@@ -42,4 +50,4 @@ steps:
     Write-Host "Smoke test failed. Container logs:"
     docker logs thonmaker_test
     exit 1
-  displayName: Build and smoke test Docker container
+  displayName: "Build and smoke test Docker container"
