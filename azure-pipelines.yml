@@ -4,6 +4,19 @@ trigger:
 pool:
   name: SelfHostedWindows
 
+- powershell: |
+    $ErrorActionPreference = "Stop"
+
+    chcp 65001 | Out-Null
+    [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+    $env:PYTHONUTF8 = "1"
+
+    python -m pip install --upgrade pip
+    python -m pip install --upgrade semgrep
+
+    python -m semgrep scan --config=auto --sarif --output semgrep.sarif
+  displayName: "SAST - Semgrep (SARIF)"
+
 steps:
 - powershell: |
     $ErrorActionPreference = "Stop"
