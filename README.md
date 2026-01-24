@@ -1,20 +1,53 @@
-# Introduction 
-TODO: Give a short introduction of your project. Let this section explain the objectives or the motivation behind this project. 
+# Thonmaker – Azure DevSecOps CI/CD (Docker → ACR → App Service) + CMMC Level 2 Mapping
 
-# Getting Started
-TODO: Guide users through getting your code up and running on their own system. In this section you can talk about:
-1.	Installation process
-2.	Software dependencies
-3.	Latest releases
-4.	API references
+Thonmaker is a containerized web application deployed through an end-to-end **Azure DevOps CI/CD pipeline**. This repo is built as a **portfolio-grade DevSecOps project** that demonstrates secure software delivery using **Docker**, **Azure Container Registry (ACR)**, **Azure App Service (Web App for Containers)**, and security scans (**Semgrep SAST** + **Trivy image scanning**), with **Managed Identity** and **RBAC** for registry access.
 
-# Build and Test
-TODO: Describe and show how to build your code and run the tests. 
+ Successful deployment validation page: **“Thonmaker Docker CI/CD working!”**
 
-# Contribute
-TODO: Explain how other users and developers can contribute to make your code better. 
+---
 
-If you want to learn more about creating good readme files then refer the following [guidelines](https://docs.microsoft.com/en-us/azure/devops/repos/git/create-a-readme?view=azure-devops). You can also seek inspiration from the below readme files:
-- [ASP.NET Core](https://github.com/aspnet/Home)
-- [Visual Studio Code](https://github.com/Microsoft/vscode)
-- [Chakra Core](https://github.com/Microsoft/ChakraCore)
+## What This Project Demonstrates
+
+- Automated CI/CD with Azure DevOps Pipelines
+- Docker image build and repeatable deployments
+- Static Application Security Testing (SAST) with **Semgrep**
+- Container vulnerability scanning with **Trivy**
+- Private image storage in **ACR**
+- Secure image pulls by App Service using **System-Assigned Managed Identity** + **AcrPull**
+- Auditable build/deploy logs suitable for compliance evidence
+
+---
+
+## Architecture Overview
+
+**Flow:**
+1. Developer pushes code to `main`
+2. Azure DevOps Pipeline runs
+3. Semgrep scans source code (SAST)
+4. Docker image is built and tagged with `$(Build.BuildId)`
+5. Trivy scans the built image for CVEs
+6. Image is pushed to ACR
+7. App Service pulls the image from ACR using Managed Identity
+8. App Service restarts container and serves the app
+
+---
+
+## Technologies Used
+
+- **Azure DevOps Pipelines** – CI/CD automation
+- **Self-hosted Windows build agent** – pipeline execution environment
+- **Docker** – container build and packaging
+- **Semgrep** – SAST (static code scanning)
+- **Trivy** – container vulnerability scanning (CVEs)
+- **Azure Container Registry (ACR)** – private image registry
+- **Azure App Service (Linux Container)** – container hosting
+- **Managed Identity + RBAC** – secure, passwordless ACR image pulls
+- **Git** – version control
+
+---
+
+## Local Development
+
+### Build the image locally
+```bash
+docker build -t thonmaker:local .
