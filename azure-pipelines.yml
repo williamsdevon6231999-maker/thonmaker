@@ -4,6 +4,20 @@ trigger:
 pool:
   name: SelfHostedWindows
 
+variables:
+  # ====== CHANGE THESE 3 ======
+  ACR_NAME: "thonmakeracr"              # your ACR resource name (no .azurecr.io)
+  APP_NAME: "thonmaker-app"             # your Web App name
+  SERVICE_CONNECTION: "sc-thonmaker-acr" # the service connection you just created
+  # ============================
+
+  IMAGE_REPO: "thonmaker"
+  BUILD_TAG: "$(Build.BuildId)"
+  ACR_LOGIN_SERVER: "$(ACR_NAME).azurecr.io"
+  LOCAL_IMAGE: "$(IMAGE_REPO):$(BUILD_TAG)"
+  ACR_IMAGE: "$(ACR_LOGIN_SERVER)/$(IMAGE_REPO):$(BUILD_TAG)"
+  ACR_IMAGE_LATEST: "$(ACR_LOGIN_SERVER)/$(IMAGE_REPO):latest"
+
 steps:
 # --- SAST (Semgrep) ---
 - powershell: |
@@ -22,10 +36,10 @@ steps:
     $global:LASTEXITCODE = 0
   displayName: "SAST - Semgrep Scan"
 
-# --- Build Docker image ---
+# --- Build Docker image (local tag) ---
 - powershell: |
     $ErrorActionPreference = "Stop"
-    docker build -t thonmaker:$(Build.BuildId) .
+    docker build -t "$(LOCAL_IMAGE)" .
   displayName: "Build Docker image"
 
 # --- Install / Verify Trivy ---
@@ -44,21 +58,34 @@ steps:
     trivy -v
   displayName: "Install / Verify Trivy"
 
-# --- Image CVE Scan (report only) ---
+# --- Trivy Scan (save reports) ---
 - powershell: |
     $ErrorActionPreference = "Stop"
     $env:TRIVY_CACHE_DIR = "$(Pipeline.Workspace)\trivy-cache"
 
-    trivy image --severity HIGH,CRITICAL thonmaker:$(Build.BuildId)
-    $global:LASTEXITCODE = 0
-  displayName: "Image CVE Scan - Trivy"
+    New-Item -ItemType Directory -Force -Path "$(Build.ArtifactStagingDirectory)" | Out-Null
 
-# --- Smoke Test (with guaranteed cleanup) ---
+    trivy image --severity HIGH,CRITICAL --format table "$(LOCAL_IMAGE)" | Out-File -Encoding utf8 "$(Build.ArtifactStagingDirectory)\image-scan-table.txt"
+    trivy image --severity HIGH,CRITICAL --format json  "$(LOCAL_IMAGE)" | Out-File -Encoding utf8 "$(Build.ArtifactStagingDirectory)\image-scan.json"
+
+    # Do not fail pipeline for now (report only)
+    $global:LASTEXITCODE = 0
+  displayName: "Image CVE Scan - Trivy (report)"
+
+# --- Publish scan artifacts to pipeline run ---
+- task: PublishBuildArtifacts@1
+  inputs:
+    PathtoPublish: "$(Build.ArtifactStagingDirectory)"
+    ArtifactName: "security-reports"
+    publishLocation: "Container"
+  displayName: "Publish security reports"
+
+# --- Smoke Test (local image) ---
 - powershell: |
     $ErrorActionPreference = "Stop"
 
     $name = "thonmaker_test_$(Build.BuildId)"
-    $tag  = "thonmaker:$(Build.BuildId)"
+    $tag  = "$(LOCAL_IMAGE)"
 
     function Remove-Container([string]$n) {
       $old = $ErrorActionPreference
@@ -69,13 +96,10 @@ steps:
     }
 
     try {
-      # cleanup if exists (never fail)
       Remove-Container $name
 
-      # run container with random host port
       docker run -d --name $name -p 0:8000 $tag | Out-Null
 
-      # discover assigned host port
       $portLine = docker port $name 8000/tcp
       $hostPort = ($portLine -split ':')[-1].Trim()
 
@@ -95,7 +119,40 @@ steps:
       exit 1
     }
     finally {
-      # ALWAYS cleanup (never fail)
       Remove-Container $name
     }
   displayName: "Smoke Test Docker Container"
+
+# --- Login to Azure + ACR, tag & push ---
+- task: AzureCLI@2
+  inputs:
+    azureSubscription: "$(SERVICE_CONNECTION)"
+    scriptType: "ps"
+    scriptLocation: "inlineScript"
+    inlineScript: |
+      $ErrorActionPreference = "Stop"
+
+      az account show
+
+      # Login to ACR
+      az acr login --name "$(ACR_NAME)"
+
+      # Tag image for ACR
+      docker tag "$(LOCAL_IMAGE)" "$(ACR_IMAGE)"
+      docker tag "$(LOCAL_IMAGE)" "$(ACR_IMAGE_LATEST)"
+
+      # Push
+      docker push "$(ACR_IMAGE)"
+      docker push "$(ACR_IMAGE_LATEST)"
+
+      Write-Host "Pushed: $(ACR_IMAGE)"
+      Write-Host "Pushed: $(ACR_IMAGE_LATEST)"
+  displayName: "Push image to ACR"
+
+# --- Deploy container from ACR to Web App ---
+- task: AzureWebAppContainer@1
+  inputs:
+    azureSubscription: "$(SERVICE_CONNECTION)"
+    appName: "$(APP_NAME)"
+    containers: "$(ACR_IMAGE)"
+  displayName: "Deploy to Azure Web App (container)"
