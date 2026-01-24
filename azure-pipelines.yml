@@ -16,16 +16,18 @@ steps:
 
     python -m pip install --upgrade pip
     python -m pip install --upgrade semgrep
-   python -m semgrep scan --config=auto; $LASTEXITCODE = 0
+
+    # Run SAST (report only – do not fail pipeline)
+    python -m semgrep scan --config=auto; $LASTEXITCODE = 0
   displayName: "SAST - Semgrep Scan"
 
-# --- Build Docker image (so Trivy has something to scan) ---
+# --- Build Docker image ---
 - powershell: |
     $ErrorActionPreference = "Stop"
     docker build -t thonmaker:$(Build.BuildId) .
   displayName: "Build Docker image"
 
-# --- Install/Verify Trivy (no Chocolatey required) ---
+# --- Install / Verify Trivy ---
 - powershell: |
     $ErrorActionPreference = "Stop"
 
@@ -33,20 +35,20 @@ steps:
       if (Get-Command winget -ErrorAction SilentlyContinue) {
         winget install --id AquaSecurity.Trivy -e --accept-package-agreements --accept-source-agreements
       } else {
-        Write-Host "ERROR: 'winget' not found on this agent. Install Trivy manually or enable winget."
+        Write-Host "ERROR: winget not found on this agent"
         exit 1
       }
     }
 
     trivy -v
-  displayName: "Install/Verify Trivy"
+  displayName: "Install / Verify Trivy"
 
-# --- Trivy CVE Scan (report HIGH/CRITICAL) ---
+# --- Image CVE Scan (report only) ---
 - powershell: |
     $ErrorActionPreference = "Stop"
     $env:TRIVY_CACHE_DIR = "$(Pipeline.Workspace)\trivy-cache"
     trivy image --severity HIGH,CRITICAL thonmaker:$(Build.BuildId)
-  displayName: "Vuln Scan - Trivy (HIGH/CRITICAL)"
+  displayName: "Image CVE Scan - Trivy"
 
 # --- Smoke Test (with guaranteed cleanup) ---
 - powershell: |
@@ -81,4 +83,4 @@ steps:
       docker rm -f $name 2>$null
       $LASTEXITCODE = 0
     }
-  displayName: "Smoke test Docker container"
+  displayName: "Smoke Test Docker Container"
