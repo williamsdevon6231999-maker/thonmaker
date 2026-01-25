@@ -1,0 +1,133 @@
+services:
+  vulnerability-tests:
+    image: greenbone/vulnerability-tests
+    pull_policy: always
+    volumes:
+      - vt_data_vol:/mnt
+
+  notus-data:
+    image: greenbone/notus-data
+    pull_policy: always
+    volumes:
+      - notus_data_vol:/mnt
+
+  scap-data:
+    image: greenbone/scap-data
+    pull_policy: always
+    volumes:
+      - scap_data_vol:/mnt
+
+  cert-bund-data:
+    image: greenbone/cert-bund-data
+    pull_policy: always
+    volumes:
+      - cert_data_vol:/mnt
+
+  dfn-cert-data:
+    image: greenbone/dfn-cert-data
+    pull_policy: always
+    volumes:
+      - dfn_data_vol:/mnt
+
+  data-objects:
+    image: greenbone/data-objects
+    pull_policy: always
+    volumes:
+      - data_objects_vol:/mnt
+
+  report-formats:
+    image: greenbone/report-formats
+    pull_policy: always
+    volumes:
+      - rf_data_vol:/mnt
+
+  gpg-data:
+    image: greenbone/gpg-data
+    pull_policy: always
+    volumes:
+      - gpg_data_vol:/mnt
+
+  redis-server:
+    image: greenbone/redis-server
+    restart: on-failure
+    volumes:
+      - redis_socket_vol:/run/redis
+
+  pg-gvm:
+    image: greenbone/pg-gvm
+    restart: on-failure
+    volumes:
+      - psql_data_vol:/var/lib/postgresql
+      - psql_socket_vol:/var/run/postgresql
+
+  gvmd:
+    image: greenbone/gvmd
+    restart: on-failure
+    volumes:
+      - vt_data_vol:/var/lib/openvas/plugins
+      - scap_data_vol:/var/lib/gvm/scap
+      - cert_data_vol:/var/lib/gvm/cert-data
+      - dfn_data_vol:/var/lib/gvm/dfn-cert-data
+      - data_objects_vol:/var/lib/gvm/data-objects/gvmd
+      - psql_data_vol:/var/lib/postgresql
+      - psql_socket_vol:/var/run/postgresql
+      - gvmd_socket_vol:/run/gvmd
+      - ospd_openvas_socket_vol:/run/ospd
+      - redis_socket_vol:/run/redis
+    depends_on:
+      - pg-gvm
+      - redis-server
+
+  gsa:
+    image: greenbone/gsa
+    restart: on-failure
+    ports:
+      - 9392:80
+    depends_on:
+      - gvmd
+
+  ospd-openvas:
+    image: greenbone/ospd-openvas
+    restart: on-failure
+    volumes:
+      - vt_data_vol:/var/lib/openvas/plugins
+      - notus_data_vol:/var/lib/notus
+      - gpg_data_vol:/etc/openvas/gnupg
+      - ospd_openvas_socket_vol:/run/ospd
+      - redis_socket_vol:/run/redis
+    depends_on:
+      - redis-server
+      - vulnerability-tests
+
+  notus-scanner:
+    image: greenbone/notus-scanner
+    restart: on-failure
+    volumes:
+      - notus_data_vol:/var/lib/notus
+      - gpg_data_vol:/etc/notus/gnupg
+      - notus_scanner_socket_vol:/run/notus-scanner
+    depends_on:
+      - notus-data
+
+  gvm-tools:
+    image: greenbone/gvm-tools
+    volumes:
+      - gvmd_socket_vol:/run/gvmd
+    depends_on:
+      - gvmd
+
+volumes:
+  vt_data_vol:
+  notus_data_vol:
+  scap_data_vol:
+  cert_data_vol:
+  dfn_data_vol:
+  data_objects_vol:
+  rf_data_vol:
+  gpg_data_vol:
+  redis_socket_vol:
+  psql_data_vol:
+  psql_socket_vol:
+  gvmd_socket_vol:
+  ospd_openvas_socket_vol:
+  notus_scanner_socket_vol:
