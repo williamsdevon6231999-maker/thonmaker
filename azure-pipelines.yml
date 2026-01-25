@@ -12,7 +12,7 @@ variables:
 
   # DAST target (your running Azure App Service URL)
   # Example: https://thonmaker-app-auayaxh7evbug5ak.eastus2-01.azurewebsites.net
-  dastTargetUrl: https://REPLACE_WITH_YOUR_APP_SERVICE_URL
+  dastTargetUrl: thonmaker-app-auayaxh7evbug5ak.eastus2-01.azurewebsites.net
 
 steps:
 # ---------------------------
