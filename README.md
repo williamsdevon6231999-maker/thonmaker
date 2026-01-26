@@ -45,6 +45,34 @@ Successful deployment validation page:
 
 ---
 
+## Pipeline & Security Evidence (Screenshots)
+
+### Azure DevSecOps Pipeline Overview
+![Pipeline Overview](docs/screenshots/pipeline-overview.png)
+
+---
+
+### SAST – Semgrep (Fail by Design)
+This screenshot shows the Semgrep SAST stage **failing intentionally** to enforce secure coding standards.
+
+![Semgrep Fail](docs/screenshots/semgrep-fail.png)
+
+---
+
+### DAST – OpenVAS Dashboard
+OpenVAS running on a dedicated Azure Linux VM performing dynamic vulnerability scans against the deployed application.
+
+![OpenVAS Dashboard](docs/screenshots/OpenVas.png)
+
+---
+
+### OpenVAS Scan Results
+Results from a completed OpenVAS scan (DAST), used as audit and compliance evidence.
+
+![Scan Results](docs/screenshots/Scan%20results.png)
+
+---
+
 ## Technologies Used
 
 - **Azure DevOps Pipelines** – CI/CD automation
